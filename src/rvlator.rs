@@ -3,6 +3,7 @@ use std::env;
 use std::fs;
 use std::io::ErrorKind;
 use std::io::Read;
+use std::println as debug;
 
 /// bitmask32(width, position)
 macro_rules! bitmask32 {
@@ -168,7 +169,7 @@ impl RiscvCpu {
         }
     }
 
-    fn fetch(&mut self) -> Result<u32, RiscvCpuError> {
+    fn fetch(&self) -> Result<u32, RiscvCpuError> {
         if self.pc < self.mem.len().try_into().unwrap() {
             let idx = self.pc as usize; // LATER: Using `as` is lossy conversion
                                         // Instructions are stored in memory in 16-bit parcels which
@@ -178,7 +179,6 @@ impl RiscvCpu {
                 | (self.mem[idx + 1] as u32) << 8
                 | (self.mem[idx + 2] as u32) << 16
                 | (self.mem[idx + 3] as u32) << 24;
-            self.pc += 4;
             Ok(inst)
         } else {
             Err(RiscvCpuError::FetchError)
@@ -209,8 +209,25 @@ impl RiscvCpu {
 
         let opcode: u32 = getfield32!(inst, INST_OPCODE_WID, INST_OPCODE_POS);
         match opcode {
-            // addi, slti, sltiu, andi, ori, xori, slli, srli, srai
-            0b0010011 => {
+            0b0010111 => {
+                let rd:usize = getfield32!(inst, INST_RD_WID, INST_RD_POS).try_into().unwrap();
+                sanitizereg!(rd);
+                let imm20:u32 = getfield32!(inst, INST_IMM31_12_WID, INST_IMM31_12_POS).try_into().unwrap();
+                let simm20:u64 = signext20to64(imm20);
+                println!("auipc {},{}", REGNAME[rd], simm20 as i64);
+                self.ixu[rd] = self.pc + (simm20 << 12);
+            }
+            // Base ISA
+            0b0110111 => { // lui
+                let rd:usize = getfield32!(inst, INST_RD_WID, INST_RD_POS).try_into().unwrap();
+                sanitizereg!(rd);
+                let imm20:u32 = getfield32!(inst, INST_IMM31_12_WID, INST_IMM31_12_POS).try_into().unwrap();
+                let simm20:u64 = signext20to64(imm20);
+                println!("lui {},{}", REGNAME[rd], simm20 as i64);
+                self.ixu[rd] = simm20 << 12;
+            }
+            // Base ISA
+            0b0010011 => { // addi, slti, sltiu, andi, ori, xori, slli, srli, srai
                 //Integer Register Immediate Instructions
                 // Both rd and rs are usize instead of u32 to index into the ixu array
                 let rd: usize = getfield32!(inst, INST_RD_WID, INST_RD_POS).try_into().unwrap();
@@ -225,7 +242,9 @@ impl RiscvCpu {
                 match funct3 {
                     0b000 => { //ADDI: x[rd] = x[rs1] + sext(immediate)
                         println!("addi {},{},{}", REGNAME[rd], REGNAME[rs1], simm12 as i64);
-                        self.ixu[rd] = self.ixu[rs1] + simm12;
+                        // Why wrapping_add? 0xfffffffffffffffc + 0xffffffffffffffff = 1fffffffffffffffb
+                        // We need to discard 1 since this instruction ignores the Arithmetic Overflows
+                        self.ixu[rd] = self.ixu[rs1].wrapping_add(simm12);
                     }
                     0b001 => { //SLLI: x[rd] = x[rs1] << shamt
                         // 0 <= shamt <= 63, imm12[5:0] or inst[25:20] are used as shift value
@@ -314,6 +333,7 @@ impl RiscvCpu {
                 )
             );
         }
+
         print!("{COLOR_BLUE}[pc]{COLOR_RESET} = {:#018x}", self.pc);
         println!("{}", output);
         println!("----------------------------------------------\
@@ -351,6 +371,7 @@ pub fn rvlator() {
         let inst = cpu.fetch().unwrap();
         cpu.decode(inst).unwrap();
         cpu.print_registers();
+        cpu.pc += 4;
     }
 }
 
@@ -359,7 +380,7 @@ mod tests {
     use super::*;
 
     fn prelog() -> RiscvCpu {
-        let bin = read_bin(&String::from("test/add-addi.bin")).unwrap();
+        let bin = read_bin(&String::from("test/bin/rvlatortest.bin")).unwrap();
         RiscvCpu::new(bin)
     }
 
@@ -367,6 +388,7 @@ mod tests {
     fn test_newcpu() {
         let mut cpu = prelog();
         let inst = cpu.fetch().unwrap();
+        cpu.pc += 4;
         printinst!(inst);
     }
 
@@ -374,6 +396,7 @@ mod tests {
     fn test_validdecode() {
         let mut cpu = prelog();
         let inst = cpu.fetch().unwrap();
+        cpu.pc += 4;
         assert_eq!((), cpu.decode(inst).unwrap());
     }
 
