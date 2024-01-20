@@ -3,7 +3,7 @@ use std::env;
 use std::fs;
 use std::io::ErrorKind;
 use std::io::Read;
-use std::println as debug;
+//use std::println as debug;
 
 /// bitmask32(width, position)
 macro_rules! bitmask32 {
@@ -84,6 +84,41 @@ const HALFWORD: u8 = 16;
 const WORD: u8 = 32;
 const DOUBLEWORD: u8 = 64;
 const QUADWORD: u8 = 128;
+
+// Register Encoding. Used also for
+// indexing into the name array REGNAMES
+const REG_ZERO:usize = 0;
+const REG_RA :usize = 1 ;
+const REG_SP :usize = 2;
+const REG_GP :usize = 3;
+const REG_TP :usize = 4;
+const REG_T0 :usize = 5;
+const REG_T1 :usize = 6;
+const REG_T2 :usize = 7;
+const REG_S0 :usize = 8;
+const REG_S1 :usize = 9;
+const REG_A0 :usize = 10;
+const REG_A1 :usize = 11;
+const REG_A2 :usize = 12;
+const REG_A3 :usize = 13;
+const REG_A4 :usize = 14;
+const REG_A5 :usize = 15;
+const REG_A6 :usize = 16;
+const REG_A7 :usize = 17;
+const REG_S2 :usize = 18;
+const REG_S3 :usize = 19;
+const REG_S4 :usize = 20;
+const REG_S5 :usize = 21;
+const REG_S6 :usize = 22;
+const REG_S7 :usize = 23;
+const REG_S8 :usize = 24;
+const REG_S9 :usize = 25;
+const REG_S10 :usize = 26;
+const REG_S11 :usize = 27;
+const REG_T3 :usize = 28;
+const REG_T4 :usize = 29;
+const REG_T5 :usize = 30;
+const REG_T6 :usize = 31;
 
 const INST_OPCODE_POS: u8 = 0;
 const INST_OPCODE_WID: u8 = 7;
@@ -185,7 +220,7 @@ impl RiscvCpu {
         }
     }
     
-    fn decode(&mut self, inst: u32) -> Result<(), RiscvCpuError> {
+    fn execute(&mut self, inst: u32) -> Result<(), RiscvCpuError> {
         //32-bit Valid Instruction => xxxxxxxxxbbb11 (bbb != 111)
         //inst[1:0] field
         let enc: u32 = getfield32!(inst, 2, 0);
@@ -369,7 +404,7 @@ pub fn rvlator() {
 
     for _ in 0..cpu.mem.len()/4 {
         let inst = cpu.fetch().unwrap();
-        cpu.decode(inst).unwrap();
+        cpu.execute(inst).unwrap();
         cpu.print_registers();
         cpu.pc += 4;
     }
@@ -397,18 +432,77 @@ mod tests {
         let mut cpu = prelog();
         let inst = cpu.fetch().unwrap();
         cpu.pc += 4;
-        assert_eq!((), cpu.decode(inst).unwrap());
+        assert_eq!((), cpu.execute(inst).unwrap());
     }
 
     #[test]
     fn test_invaliddecode1() {
         let mut cpu = prelog();
-        assert_eq!(Err(RiscvCpuError::DecodeError), cpu.decode(0x00000000));
+        assert_eq!(Err(RiscvCpuError::DecodeError), cpu.execute(0x00000000));
     }
 
     #[test]
     fn test_invaliddecode2() {
         let mut cpu = prelog();
-        assert_eq!(Err(RiscvCpuError::DecodeError), cpu.decode(0x0000001f));
+        assert_eq!(Err(RiscvCpuError::DecodeError), cpu.execute(0x0000001f));
+    }
+
+    #[test]
+    fn test_inst_addi_v1() {
+        let mut cpu = prelog();
+        // addi a0,zero,-4  (ffc00513)
+        cpu.execute(0xffc00513).unwrap();
+        assert_eq!(cpu.ixu[REG_A0], 0xfffffffffffffffc);
+    }
+
+    #[test]
+    fn test_inst_addi_v2() {
+        let mut cpu = prelog();
+        // Above instruction flips the bits and
+        // performs the NOT operation.
+        
+        // addi a0,zero,-4  (ffc00513)
+        cpu.execute(0xffc00513).unwrap();
+        // addi a0, a0, -1 (fff50513)
+        cpu.execute(0xfff50513).unwrap();
+        assert_eq!(cpu.ixu[REG_A0], 0xfffffffffffffffb);
+    }
+
+    #[test]
+    fn test_inst_slti() {
+        let mut cpu = prelog();
+        // addi a1,zero,-5
+        cpu.execute(0xffb00593).unwrap();
+        //  slti a2, a1, -4 (ffc5a613)
+        cpu.execute(0xffc5a613).unwrap();
+        assert_eq!(cpu.ixu[REG_A2], 0x0000000000000001)
+    }
+
+    #[test]
+    fn test_inst_slli() {
+        let mut cpu = prelog();
+        // addi a0, zero, -4  (ffc00513)
+        cpu.execute(0xffc00513).unwrap();
+        // slli a2, a0, 0x3c (03c51613)
+        cpu.execute(0x03c51613).unwrap();
+        assert_eq!(cpu.ixu[REG_A2], 0xc000000000000000);
+    }
+
+    #[test]
+    fn test_inst_lui() {
+        let mut cpu = prelog();
+        // lui s4, 0xdead (0deada37)
+        cpu.execute(0x0deada37).unwrap();
+        assert_eq!(cpu.ixu[REG_S4], 0x000000000dead000);
+    }
+
+    #[test]
+    fn test_inst_auipc() {
+        let mut cpu = prelog();
+        // Since pc == 0 for below instruction, for test increment it
+        cpu.pc = 4;
+        // auipc s3, 0xdead (0dead997)
+        cpu.execute(0x0dead997).unwrap();
+        assert_eq!(cpu.ixu[REG_S3], 0x000000000dead004);
     }
 }
