@@ -26,8 +26,22 @@ _start:
 ```
 
 ### Run
+At this moment this is developed and tested on x86-64 Ubuntu 23.10
+machine.
+
+#### Build the test binary
+Building locally will require RISC-V toolchain for `arch=rv64gc`.
+This can be done by downloading and building the [RISC-V toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain).
+
+Test assembly code is present inside the `test` folder which needs to be
+built first. Makefile takes care of building the test binary.
+```
+make -C test
+```
+
+#### Run Rvlator
 ```bash
-> cargo run -- test/bin/rvlatortest.bin
+cargo run -- test/bin/rvlatortest.bin
 ```
 
 ### Rvlator Output
